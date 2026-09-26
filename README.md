@@ -2,7 +2,7 @@
 
 Send a voice note to a Telegram bot. About a minute later you get proper meeting minutes back: a summary, the decisions made, who is doing what and by when, and the questions nobody answered. Everything also gets logged to Airtable so nothing is lost.
 
-I built this for Nigerian business meetings, where people switch between English, Igbo, Yoruba, Pidgin and Hausa in the same sentence. Most meeting tools assume clean English. This one expects the mix.
+Real meetings are messy. People talk over each other, switch languages mid sentence, and the audio is rarely clean. This system is built to handle that and still give you minutes you can trust.
 
 ![Bot reply in Telegram](Mis_Screenshots/bot-reply.png)
 
@@ -97,7 +97,7 @@ Or send `transcript` instead of `audio_url`.
 
 ## Real world test
 
-I tested it on a real meeting recording in mixed Igbo and English. Scribe struggled. It skipped most of the Igbo and got stuck repeating a line. Groq still pulled out the correct summary, decisions and action items from what was left. That was the bet behind the whole design: the transcript does not need to be perfect if the extraction step is careful.
+I tested it on a real, messy meeting recording where people switched languages mid sentence. Scribe struggled. It skipped whole chunks and got stuck repeating a line. Groq still pulled out the correct summary, decisions and action items from what was left. That was the bet behind the whole design: the transcript does not need to be perfect if the extraction step is careful.
 
 ## Stack
 
@@ -133,9 +133,9 @@ I tested it on a real meeting recording in mixed Igbo and English. Scribe strugg
 
 ## What's next
 
-- Better transcription for Igbo and other Nigerian languages
+- Better transcription for recordings that mix languages
 - Optional email follow ups to each person with their action items (held back until there is an opt in, so the endpoint can't be used to spam people)
-- Plugging this in as the premium module of a small business automation suite for Lagos pharmacies and supermarkets
+- Plugging this in as the premium module of a small business automation suite
 
 ## Author
 
