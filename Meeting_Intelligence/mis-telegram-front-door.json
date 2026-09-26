@@ -1,0 +1,279 @@
+{
+  "name": "MIS - Telegram Front Door",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": ["message"],
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.3,
+      "position": [-272, 0],
+      "id": "6f6b2a0f-4e64-46dd-ba93-006688cfb8f3",
+      "name": "Telegram Trigger",
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_WITH_YOUR_CREDENTIAL",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ Boolean($json.message.voice || $json.message.audio || $json.message.document) }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    },
+                    "id": "fe2bc160-297c-4353-ab3e-85b003758d1e"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Audio"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "eb59df01-8d2f-4a82-a586-5e36028e7d65",
+                    "leftValue": "={{ $json.message.text }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "string",
+                      "operation": "notEmpty",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Text"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [-64, 0],
+      "id": "08485200-c909-47ff-b655-0e8eaaf22672",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "5dc7e10e-a97e-4fed-bdf7-5457d1bbf9b7",
+              "name": "file_id",
+              "value": "={{ ($json.message.voice ?? $json.message.audio ?? $json.message.document).file_id }}",
+              "type": "string"
+            },
+            {
+              "id": "2fd4a261-f1c3-4e31-a1d2-229cde43bcd7",
+              "name": "chat_id",
+              "value": "={{ $json.message.chat.id }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [176, -112],
+      "id": "b7196e94-8d7b-4b68-9aae-0b13fbc812c5",
+      "name": "Extract File ID"
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "fileId": "={{ $json.file_id }}",
+        "download": false
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [368, -112],
+      "id": "ceef48fe-374e-4264-9836-e50fb975aa99",
+      "name": "Get a file",
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_WITH_YOUR_CREDENTIAL",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a849c2c8-fd5b-4888-85cd-4fc6879d78cd",
+              "name": "audio_url",
+              "value": "={{ 'https://api.telegram.org/file/bot' + $env.TELEGRAM_BOT_TOKEN + '/' + $json.result.file_path }}",
+              "type": "string"
+            },
+            {
+              "id": "83e5f1cc-a497-4b13-bc9e-2325c2d1f446",
+              "name": "chat_id",
+              "value": "={{ $('Extract File ID').item.json.chat_id }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [560, -112],
+      "id": "dd213d61-b53c-45db-aa59-d0cadd6bebbe",
+      "name": "Build Audio URL"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://YOUR-N8N-INSTANCE/webhook/meeting-intel",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "audio_url",
+              "value": "={{ $json.audio_url }}"
+            },
+            {
+              "name": "attendees"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [752, -112],
+      "id": "bc9f231b-1d64-46da-98a6-ba1727cd9ca7",
+      "name": "Send Audio to MIS"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://YOUR-N8N-INSTANCE/webhook/meeting-intel",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "transcript",
+              "value": "={{ $json.message.text }}"
+            },
+            {
+              "name": "attendees"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [752, 112],
+      "id": "64eed6a4-94f9-4f8d-978d-c2d5d1720457",
+      "name": "Send Transcript to MIS"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "543cce25-e960-4336-bd03-b2d30dc16a89",
+              "name": "reply_text",
+              "value": "={{ '📋 ' + $json.meeting_id + '\\n\\n📝 Summary:\\n' + $json.summary + ($json.decisions && $json.decisions.length ? '\\n\\n✅ Decisions:\\n' + $json.decisions.map(d => '• ' + d).join('\\n') : '') + ($json.action_items && $json.action_items.length ? '\\n\\n📌 Action items:\\n' + $json.action_items.map(a => '• ' + (a.task || a) + (a.assignee && a.assignee !== 'Unassigned' ? ' (' + a.assignee + ')' : '') + (a.deadline ? ', due ' + a.deadline : '')).join('\\n') : '') + ($json.open_questions && $json.open_questions.length ? '\\n\\n❓ Open questions:\\n' + $json.open_questions.map(q => '• ' + q).join('\\n') : '') }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [960, 0],
+      "id": "3936cf8f-eb1b-437a-9e46-00b57b179a94",
+      "name": "Format Reply"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').item.json.message.chat.id }}",
+        "text": "={{ $json.reply_text }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1168, 0],
+      "id": "18cfa3b3-1ce8-4b25-b5e8-487710ec3443",
+      "name": "Send Reply",
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_WITH_YOUR_CREDENTIAL",
+          "name": "Telegram account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": {
+      "main": [[{ "node": "Switch", "type": "main", "index": 0 }]]
+    },
+    "Switch": {
+      "main": [
+        [{ "node": "Extract File ID", "type": "main", "index": 0 }],
+        [{ "node": "Send Transcript to MIS", "type": "main", "index": 0 }]
+      ]
+    },
+    "Extract File ID": {
+      "main": [[{ "node": "Get a file", "type": "main", "index": 0 }]]
+    },
+    "Get a file": {
+      "main": [[{ "node": "Build Audio URL", "type": "main", "index": 0 }]]
+    },
+    "Build Audio URL": {
+      "main": [[{ "node": "Send Audio to MIS", "type": "main", "index": 0 }]]
+    },
+    "Send Audio to MIS": {
+      "main": [[{ "node": "Format Reply", "type": "main", "index": 0 }]]
+    },
+    "Send Transcript to MIS": {
+      "main": [[{ "node": "Format Reply", "type": "main", "index": 0 }]]
+    },
+    "Format Reply": {
+      "main": [[{ "node": "Send Reply", "type": "main", "index": 0 }]]
+    }
+  },
+  "pinData": {},
+  "settings": {}
+}

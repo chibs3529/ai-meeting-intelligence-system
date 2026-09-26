@@ -1,0 +1,305 @@
+{
+  "name": "Meeting Intelligence System",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "meeting-intel",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [-800, -144],
+      "id": "f495fab0-8358-474d-a10b-c8b492d341e7",
+      "name": "Webhook"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [368, 0],
+      "id": "ffb0ab6c-f14a-49c3-b1a8-8a534c66db73",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"openai/gpt-oss-120b\",\n  \"temperature\": 0.2,\n  \"response_format\": { \"type\": \"json_object\" },\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are a meeting intelligence engine for Nigerian business meetings. You receive raw meeting transcripts that were auto-generated from audio. IMPORTANT CONTEXT: transcripts may mix English, Igbo, Yoruba, Hausa, and Nigerian Pidgin, sometimes switching mid-sentence, and may contain transcription errors especially in non-English segments. Use surrounding context to infer intended meaning. Output everything in English.\\n\\nYour job: extract structured meeting intelligence and return ONLY a valid JSON object — no markdown fences, no preamble, no explanation.\\n\\nReturn exactly this structure:\\n{\\n  \\\"summary\\\": \\\"2-3 sentence meeting summary in English\\\",\\n  \\\"decisions\\\": [\\\"list of decisions made\\\"],\\n  \\\"action_items\\\": [\\n    {\\n      \\\"task\\\": \\\"what needs to be done, in English\\\",\\n      \\\"assignee\\\": \\\"person's name or null if unclear\\\",\\n      \\\"assignee_email\\\": \\\"matched from the attendee list or null\\\",\\n      \\\"deadline\\\": \\\"YYYY-MM-DD or a plain phrase like 'Friday' or null\\\",\\n      \\\"priority\\\": \\\"high, medium, or low\\\"\\n    }\\n  ],\\n  \\\"open_questions\\\": [\\\"unresolved topics or questions\\\"],\\n  \\\"unclear_items\\\": [\\\"segments too garbled or ambiguous to interpret confidently — quote the fragment rather than guessing\\\"]\\n}\\n\\nRules:\\n- Match spoken names to the attendee list to fill assignee_email; if a task's owner is not stated, use null — never invent an owner.\\n- If no deadline is stated, use null — never invent dates.\\n- A task mentioned in Igbo, Yoruba, Hausa or Pidgin is still an action item — translate it to English.\\n- If a segment seems garbled but you can confidently infer meaning from context, extract it normally. If you cannot, put the fragment in unclear_items instead.\\n- Empty arrays are fine. The JSON must always be valid and complete.\"\n    },\n    {\n      \"role\": \"user\",\n     \"content\": {{ JSON.stringify(\"Attendees: \" + $json.body.attendees + \"\\n\\nTranscript:\\n\" + $json.body.transcript) }}\n    }\n  ]\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [-160, -128],
+      "id": "1ddf051e-017c-4bfa-bc79-cb181b6ddb3a",
+      "name": "Groq - Extract Intelligence",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_YOUR_CREDENTIAL",
+          "name": "Groq Header Auth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ---- Parse & Validate: Groq output → clean structured data ----\nconst raw = $input.first().json.choices[0].message.content;\n\nlet parsed;\ntry {\n  // strip any stray markdown fences, then parse\n  const clean = raw.replace(/```json|```/g, '').trim();\n  parsed = JSON.parse(clean);\n} catch (e) {\n  throw new Error('Groq returned invalid JSON: ' + e.message + ' | RAW: ' + raw.slice(0, 300));\n}\n\n// validate the shape — fail loudly, not silently\nif (!parsed.summary || !Array.isArray(parsed.action_items)) {\n  throw new Error('Parsed JSON missing required fields. Got keys: ' + Object.keys(parsed).join(', '));\n}\n\n// generate the meeting ID\nconst meetingId = 'MTG-' + String($now.toMillis()).slice(-6);\n\n// pull the original inputs through for later nodes\nconst webhookBody = $('Webhook').first().json.body;\n\nreturn [{\n  json: {\n    meeting_id: meetingId,\n    processed_at: $now.toISO(),\n    attendees_raw: webhookBody.attendees || '',\n    summary: parsed.summary,\n    decisions: parsed.decisions || [],\n    action_items: parsed.action_items || [],\n    open_questions: parsed.open_questions || [],\n    unclear_items: parsed.unclear_items || []\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [80, -128],
+      "id": "ba014e16-d879-4a8d-936d-111d9a5c1cf3",
+      "name": "Parse and Validate"
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "base": {
+          "__rl": true,
+          "value": "YOUR_AIRTABLE_BASE_ID",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "YOUR_MEETINGS_TABLE_ID",
+          "mode": "id"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Meeting ID": "={{ $json.meeting_id }}",
+            "Summary": "={{ $json.summary }}",
+            "Decision": "={{ $json.decisions.join('\\n') }}",
+            "Attendees": "={{ $json.attendees_raw }}",
+            "Open Questions": "={{ $json.open_questions.join('\\n') }}",
+            "Unclear Items": "={{ $json.unclear_items.join('\\n') }}",
+            "Date": "={{ $json.processed_at.split('T')[0] }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            { "id": "Meeting ID", "displayName": "Meeting ID", "required": false, "defaultMatch": false, "canBeUsedToMatch": true, "display": true, "type": "string", "readOnly": false, "removed": false },
+            { "id": "Date", "displayName": "Date", "required": false, "defaultMatch": false, "canBeUsedToMatch": true, "display": true, "type": "dateTime", "readOnly": false, "removed": false },
+            { "id": "Summary", "displayName": "Summary", "required": false, "defaultMatch": false, "canBeUsedToMatch": true, "display": true, "type": "string", "readOnly": false, "removed": false },
+            { "id": "Decision", "displayName": "Decision", "required": false, "defaultMatch": false, "canBeUsedToMatch": true, "display": true, "type": "string", "readOnly": false, "removed": false },
+            { "id": "Attendees", "displayName": "Attendees", "required": false, "defaultMatch": false, "canBeUsedToMatch": true, "display": true, "type": "string", "readOnly": false, "removed": false },
+            { "id": "Open Questions", "displayName": "Open Questions", "required": false, "defaultMatch": false, "canBeUsedToMatch": true, "display": true, "type": "string", "readOnly": false, "removed": false },
+            { "id": "Unclear Items", "displayName": "Unclear Items", "required": false, "defaultMatch": false, "canBeUsedToMatch": true, "display": true, "type": "string", "readOnly": false, "removed": false }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "typecast": true
+        }
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.2,
+      "position": [368, 208],
+      "id": "04cbe537-ee3f-4f22-965b-f39a1e8b3acc",
+      "name": "Log Meeting",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "REPLACE_WITH_YOUR_CREDENTIAL",
+          "name": "Airtable Personal Access Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = $input.first().json;\nreturn d.action_items.map(item => ({\n  json: {\n    task: item.task,\n    assignee: item.assignee || 'Unassigned',\n    assignee_email: item.assignee_email || '',\n    deadline: item.deadline || 'Not specified',\n    priority: item.priority || 'medium',\n    status: 'Open',\n    meeting_id: d.meeting_id\n  }\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [352, -208],
+      "id": "3fbde487-9c56-408f-93e4-9f0e502ce64a",
+      "name": "Split Action Items"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "6203b910-9634-424b-bea3-697afa0b5446",
+              "leftValue": "={{ $json.body.audio_url }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [-528, -144],
+      "id": "534241e6-7469-45ec-bcf5-a6bf6c1207a0",
+      "name": "Has Audio?"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.body.audio_url }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [-176, -416],
+      "id": "96fecac7-35eb-4777-9999-46e775bd45a9",
+      "name": "Download Audio"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.elevenlabs.io/v1/speech-to-text",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            },
+            {
+              "name": "model_id",
+              "value": "scribe_v2"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [64, -416],
+      "id": "155e3e97-26c0-42d6-8a92-1306097585a7",
+      "name": "Scribe Transcribe",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_YOUR_CREDENTIAL",
+          "name": "ElevenLabs Scribe"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const scribe = $input.first().json;\nconst webhookBody = $('Webhook').first().json.body;\n\nreturn [{\n  json: {\n    body: {\n      transcript: scribe.text,\n      attendees: webhookBody.attendees || ''\n    }\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [352, -416],
+      "id": "7784526d-eb53-4ac5-a2dd-ee9a2c7b26e0",
+      "name": "Normalize Transcript"
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "base": {
+          "__rl": true,
+          "value": "YOUR_AIRTABLE_BASE_ID",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "YOUR_ACTION_ITEMS_TABLE_ID",
+          "mode": "id"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Tasks": "={{ $json.task }}",
+            "Asignee": "={{ $json.assignee }}",
+            "Asignee Email": "={{ $json.assignee_email }}",
+            "Deadline": "={{ $json.deadline }}",
+            "Priority": "={{ $json.priority }}",
+            "Status": "={{ $json.status }}",
+            "Meeting ID": "={{ $json.meeting_id }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            { "id": "Tasks", "displayName": "Tasks", "required": false, "defaultMatch": false, "canBeUsedToMatch": true, "display": true, "type": "string", "readOnly": false, "removed": false },
+            { "id": "Asignee", "displayName": "Asignee", "required": false, "defaultMatch": false, "canBeUsedToMatch": true, "display": true, "type": "string", "readOnly": false, "removed": false },
+            { "id": "Asignee Email", "displayName": "Asignee Email", "required": false, "defaultMatch": false, "canBeUsedToMatch": true, "display": true, "type": "string", "readOnly": false, "removed": false },
+            { "id": "Deadline", "displayName": "Deadline", "required": false, "defaultMatch": false, "canBeUsedToMatch": true, "display": true, "type": "string", "readOnly": false, "removed": false },
+            { "id": "Priority", "displayName": "Priority", "required": false, "defaultMatch": false, "canBeUsedToMatch": true, "display": true, "type": "options", "options": [ { "name": "High", "value": "High" }, { "name": "Medium", "value": "Medium" }, { "name": "Low", "value": "Low" } ], "readOnly": false, "removed": false },
+            { "id": "Status", "displayName": "Status", "required": false, "defaultMatch": false, "canBeUsedToMatch": true, "display": true, "type": "options", "options": [ { "name": "Open", "value": "Open" }, { "name": "Done", "value": "Done" } ], "readOnly": false, "removed": false },
+            { "id": "Meeting ID", "displayName": "Meeting ID", "required": false, "defaultMatch": false, "canBeUsedToMatch": true, "display": true, "type": "string", "readOnly": false, "removed": false }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "typecast": true
+        }
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.2,
+      "position": [560, -208],
+      "id": "9271eba2-1e8b-45af-8bab-f7a8d225abb0",
+      "name": "Log Action Items",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "REPLACE_WITH_YOUR_CREDENTIAL",
+          "name": "Airtable Personal Access Token"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [[{ "node": "Has Audio?", "type": "main", "index": 0 }]]
+    },
+    "Groq - Extract Intelligence": {
+      "main": [[{ "node": "Parse and Validate", "type": "main", "index": 0 }]]
+    },
+    "Parse and Validate": {
+      "main": [[
+        { "node": "Respond to Webhook", "type": "main", "index": 0 },
+        { "node": "Log Meeting", "type": "main", "index": 0 },
+        { "node": "Split Action Items", "type": "main", "index": 0 }
+      ]]
+    },
+    "Split Action Items": {
+      "main": [[{ "node": "Log Action Items", "type": "main", "index": 0 }]]
+    },
+    "Has Audio?": {
+      "main": [
+        [{ "node": "Download Audio", "type": "main", "index": 0 }],
+        [{ "node": "Groq - Extract Intelligence", "type": "main", "index": 0 }]
+      ]
+    },
+    "Download Audio": {
+      "main": [[{ "node": "Scribe Transcribe", "type": "main", "index": 0 }]]
+    },
+    "Scribe Transcribe": {
+      "main": [[{ "node": "Normalize Transcript", "type": "main", "index": 0 }]]
+    },
+    "Normalize Transcript": {
+      "main": [[{ "node": "Groq - Extract Intelligence", "type": "main", "index": 0 }]]
+    }
+  },
+  "pinData": {},
+  "settings": {}
+}
