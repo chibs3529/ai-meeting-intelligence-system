@@ -4,6 +4,8 @@ Send a voice note to a Telegram bot. About a minute later you get proper meeting
 
 I built this for Nigerian business meetings, where people switch between English, Igbo, Yoruba, Pidgin and Hausa in the same sentence. Most meeting tools assume clean English. This one expects the mix.
 
+![Bot reply in Telegram](Mis_Screenshots/bot-reply.png)
+
 ## What it does
 
 - Takes a meeting as **audio** (voice note, WhatsApp recording, audio file) or as a **pasted transcript**
@@ -46,6 +48,8 @@ Webhook
 
 It is a plain webhook, so anything can call it: a bot, a form, a script, another workflow.
 
+![Meeting Intelligence System workflow](Mis_Screenshots/mis-workflow.png)
+
 **2. MIS - Telegram Front Door** (the bot)
 
 ```
@@ -55,6 +59,8 @@ Telegram Trigger → Switch
                                                                                  ▼
                                                             Format Reply → Send Reply
 ```
+
+![Telegram Front Door workflow](Mis_Screenshots/telegram-workflow.png)
 
 ## Example request
 
@@ -103,7 +109,7 @@ I tested it on a real meeting recording in mixed Igbo and English. Scribe strugg
 
 ## Setup
 
-1. Import both JSON files from the `workflows` folder into n8n.
+1. Import both JSON files from the `Meeting_Intelligence` folder into n8n.
 2. Create these credentials in n8n:
    - **Groq**: Header Auth, Name `Authorization`, Value `Bearer YOUR_GROQ_KEY`
    - **ElevenLabs**: Header Auth, Name `xi-api-key`, Value `YOUR_ELEVENLABS_KEY`
